@@ -70,11 +70,16 @@ async def binance_all_trade_streams(symbols_map, sheet):
     await binance_all_trade_streams(symbols_map, symbols, sheet)
     ```
     """
+    global disable
+    disable = False
+
     params = []
     for symbol in symbols_map:
         params.append(f"{symbol.lower()}@trade")
 
     async def subscribe(symbols_map, sheet, params):
+        global disable
+
         t = 0
         while True:
             try:
@@ -91,6 +96,7 @@ async def binance_all_trade_streams(symbols_map, sheet):
                     await websocket.send(json.dumps(subscription_message))
 
                     # Receive data and update the sheet
+                    t = 0
                     while True:
                         response = await websocket.recv()
 
@@ -100,26 +106,34 @@ async def binance_all_trade_streams(symbols_map, sheet):
                             sheet.Range(f"B{row}").Value = data["p"]
                             sheet.Range(f"C{row}").Value = parse_time(data["T"])
                         except pythoncom.com_error:
-                            print("Error updating sheet.", end="\n\n")
-                            break
+                            if disable:
+                                return
+
+                            t += 1
+                            if t == 1000:
+                                disable = True
+                                print("-"*40, end="\n\n")
+                                print("*** Maximum retries exceeded ***", end="\n\n")
+                                print("-"*40, end="\n\n")
+                                return
                         except:
                             pass
                 break
 
             except websockets.ConnectionClosed as e:
                 print("-"*40, end="\n\n")
-                print(f"Connection closed: {e}", end="\n\n")
+                print(f"*** Connection closed: {e} ***", end="\n\n")
                 t += 1
                 if t == 5:
-                    print("Maximum retries exceeded.", end="\n\n")
+                    print("*** Maximum retries exceeded ***", end="\n\n")
                     print("-"*40, end="\n\n")
                     return
-                print("Reconnecting...", end="\n\n")
+                print("*** Reconnecting... ***", end="\n\n")
                 print("-"*40, end="\n\n")
                 await asyncio.sleep(5)
             except Exception as e:
                 print("-"*40, end="\n\n")
-                print(f"Error: {e}", end="\n\n")
+                print(f"*** Error: {e} ***", end="\n\n")
                 print("-"*40, end="\n\n")
                 return
 
@@ -147,7 +161,7 @@ def main():
         workbook.SaveAs(file_path)
         excel_app.DisplayAlerts = True
     except:
-        print("Error creating Excel application.", end="\n\n")
+        print("*** Error creating Excel application. ***", end="\n\n")
         return
 
     # Activate the specified sheet
@@ -156,7 +170,7 @@ def main():
         sheet.Activate()
         format_sheet(sheet)
     except:
-        print("Sheet Format Error.", end="\n\n")
+        print("*** Sheet Format Error ***", end="\n\n")
         MESSAGE = "Error"
         return
 
@@ -164,7 +178,7 @@ def main():
         with open("symbols.txt") as file:
             symbol_list = file.read().splitlines()
     except:
-        print("Error reading symbols file.", end="\n\n")
+        print("*** Error reading symbols file ***", end="\n\n")
         return
 
     # Create a dictionary to store the row number for each symbol
@@ -178,7 +192,7 @@ def main():
             row += 1
         del symbol_list
     except:
-        print("Error creating symbols map.", end="\n\n")
+        print("*** Error creating symbols map ***", end="\n\n")
         return
 
     # Run the event loop to connect to the Binance WebSocket for trade streams
